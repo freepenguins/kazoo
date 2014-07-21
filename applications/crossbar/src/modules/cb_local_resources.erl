@@ -23,6 +23,7 @@
 -include("../crossbar.hrl").
 
 -define(CB_LIST, <<"local_resources/crossbar_listing">>).
+-define(CB_JOBLIST, <<"jobs/crossbar_listing">>).
 -define(MOD_CONFIG_CAT, <<(?CONFIG_CAT)/binary, ".local_resources">>).
 
 %%%===================================================================
@@ -47,10 +48,15 @@ init() ->
 %%--------------------------------------------------------------------
 -spec allowed_methods() -> http_methods().
 -spec allowed_methods(path_token()) -> http_methods().
+-spec allowed_methods(path_token(), path_token()) -> http_methods().
 allowed_methods() ->
     [?HTTP_GET, ?HTTP_PUT].
+allowed_methods(<<"jobs">>) ->
+    [?HTTP_GET, ?HTTP_PUT];
 allowed_methods(_) ->
     [?HTTP_GET, ?HTTP_POST, ?HTTP_DELETE].
+allowed_methods(<<"jobs">>, Id) ->
+    [?HTTP_GET].
 
 %%--------------------------------------------------------------------
 %% @public
@@ -62,8 +68,10 @@ allowed_methods(_) ->
 %%--------------------------------------------------------------------
 -spec resource_exists() -> 'true'.
 -spec resource_exists(path_token()) -> 'true'.
+-spec resource_exists(path_token(), path_token()) -> 'true'.
 resource_exists() -> true.
 resource_exists(_) -> true.
+resource_exists(<<"jobs">>, _) -> true.
 
 %%--------------------------------------------------------------------
 %% @public
@@ -76,17 +84,26 @@ resource_exists(_) -> true.
 %%--------------------------------------------------------------------
 -spec validate(cb_context:context()) -> cb_context:context().
 -spec validate(cb_context:context(), path_token()) -> cb_context:context().
+-spec validate(cb_context:context(), path_token(), path_token()) -> cb_context:context().
+
 validate(#cb_context{req_verb = ?HTTP_GET}=Context) ->
     summary(Context);
 validate(#cb_context{req_verb = ?HTTP_PUT}=Context) ->
     validate_request(undefined, Context).
 
+validate(#cb_context{req_verb = ?HTTP_PUT}=Context, <<"jobs">>) ->
+    validate_job_request('undefined', Context);
+validate(#cb_context{req_verb = ?HTTP_GET}=Context, <<"jobs">>) ->
+    jobs_summary(Context);
 validate(#cb_context{req_verb = ?HTTP_GET}=Context, Id) ->
     read(Id, Context);
 validate(#cb_context{req_verb = ?HTTP_POST}=Context, Id) ->
     validate_request(Id, Context);
 validate(#cb_context{req_verb = ?HTTP_DELETE}=Context, Id) ->
     read(Id, Context).
+
+validate(#cb_context{req_verb = ?HTTP_GET}=Context, <<"jobs">>, Id) ->
+    read_job(Id, Context).
 
 -spec post(cb_context:context(), path_token()) -> cb_context:context().
 post(Context, _) ->
@@ -99,6 +116,10 @@ put(Context) ->
     Context1 = crossbar_doc:save(Context),
     _ = maybe_aggregate_resource(Context1),
     Context1.
+
+-spec put(cb_context:context(), path_token()) -> cb_context:context().
+put(Context, <<"jobs">>) ->
+    crossbar_doc:save(Context).
 
 -spec delete(cb_context:context(), path_token()) -> cb_context:context().
 delete(Context, ResourceId) ->
@@ -120,6 +141,12 @@ delete(Context, ResourceId) ->
 read(Id, Context) ->
     crossbar_doc:load(Id, Context).
 
+-spec read_job(ne_binary(), cb_context:context()) -> cb_context:context().
+read_job(<<Year:4/binary, Month:2/binary, "-", _/binary>> = Id, Context) ->
+    crossbar_doc:load(Id, cb_context:set_account_modb(Context, wh_util:to_integer(Year), wh_util:to_integer(Month)));
+read_job(Id, Context) ->
+    crossbar_doc:load(Id, Context).
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -130,6 +157,24 @@ read(Id, Context) ->
 -spec summary(cb_context:context()) -> cb_context:context().
 summary(Context) ->
     crossbar_doc:load_view(?CB_LIST, [], Context, fun normalize_view_results/2).
+
+-spec jobs_summary(cb_context:context()) -> cb_context:context().
+jobs_summary(Context) ->
+    Ctx = cb_context:set_account_db(Context, cb_context:account_modb(Context)),
+    crossbar_doc:load_view(?CB_JOBLIST, [], Ctx, fun normalize_view_results/2).
+
+validate_job_request(ResourceId, Context) ->
+    Context.
+
+check_resource_job_schema(ResourceId, Context) ->
+    OnSuccess = fun(C) -> on_job_successful_validation(ResourceId, C) end,
+    cb_context:validate_request_data(<<"resources">>, Context, OnSuccess).
+
+-spec on_job_successful_validation(api_binary(), cb_context:context()) -> cb_context:context().
+on_job_successful_validation('undefined', #cb_context{doc=JObj}=Context) ->
+    Context#cb_context{doc=wh_json:set_value(<<"pvt_type">>, <<"job">>, JObj)};
+on_job_successful_validation(Id, #cb_context{}=Context) ->
+    crossbar_doc:load_merge(Id, Context).
 
 %%--------------------------------------------------------------------
 %% @private

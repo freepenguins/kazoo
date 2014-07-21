@@ -1,0 +1,12 @@
+{
+   "_id": "_design/jobs",
+   "language": "javascript",
+   "views": {
+       "crossbar_listing": {
+           "map": "function(doc) { if (doc.pvt_type != 'job' || doc.pvt_deleted) return; emit(doc._id, {'id': doc._id, 'status': doc.pvt_job_status, 'created': doc.pvt_created, 'job_type': job_type }); }"
+       },
+        "list_by_type": {
+           "map": "function(doc) { if (doc.pvt_type != 'job' || doc.pvt_deleted || !doc.job_type) return; emit([doc.job_type, doc.pvt_created], {'id': doc._id, 'status': doc.pvt_job_status, 'created': doc.pvt_created}); }"
+       }
+   }
+}
