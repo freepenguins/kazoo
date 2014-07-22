@@ -14,7 +14,7 @@
 -export([check/1, check/2]).
 -export([lookup_account_by_number/1]).
 -export([ported/1]).
--export([create_number/3, create_number/4, create_number/5]).
+-export([create_number/3, create_number/4, create_number/5, create_number/6]).
 -export([port_in/3
          ,port_in/4
          ,port_in/5
@@ -330,7 +330,10 @@ check_ports(#number{number=MaybePortNumber}=Number) ->
                            operation_return().
 -spec create_number(ne_binary(), api_binary(), ne_binary() | 'system', wh_json:object()) ->
                            operation_return().
--spec create_number(ne_binary(), ne_binary(), ne_binary() | 'system', wh_json:object(), boolean()) -> operation_return().
+-spec create_number(ne_binary(), ne_binary(), ne_binary() | 'system', wh_json:object(), boolean()) -> 
+                           operation_return().
+-spec create_number(ne_binary(), ne_binary(), ne_binary() | 'system', wh_json:object(), boolean(), api_binary()) -> 
+                           operation_return().
 
 create_number(Number, AssignTo, AuthBy) ->
     create_number(Number, AssignTo, AuthBy, wh_json:new()).
@@ -339,11 +342,14 @@ create_number(Number, AssignTo, AuthBy, PublicFields) ->
     create_number(Number, AssignTo, AuthBy, PublicFields, 'false').
 
 create_number(Number, AssignTo, AuthBy, PublicFields, DryRun) ->
+    create_number(Number, AssignTo, AuthBy, PublicFields, DryRun, 'undefined').
+
+create_number(Number, AssignTo, AuthBy, PublicFields, DryRun, ModuleName) ->
     lager:debug("attempting to create number ~s for account ~s", [Number, AssignTo]),
     Routines = [fun(_) -> wnm_number:get(Number, PublicFields) end
                 ,fun({'not_found', #number{}=N}) ->
                         lager:debug("try to create not_found number ~s", [Number]),
-                        create_not_found_number(Number, AssignTo, AuthBy, PublicFields, N);
+                        create_not_found_number(Number, AssignTo, AuthBy, PublicFields, N, ModuleName);
                     ({_, #number{}}=E) -> E;
                     (#number{current_state = ?NUMBER_STATE_AVAILABLE}=N) -> N;
                     (#number{}=N) -> wnm_number:error_number_exists(N)
@@ -376,9 +382,9 @@ create_number(Number, AssignTo, AuthBy, PublicFields, DryRun) ->
                ],
     lists:foldl(fun(F, J) -> catch F(J) end, 'ok', Routines).
 
--spec create_not_found_number(ne_binary(), api_binary(), 'system' | ne_binary(), wh_json:object(), wnm_number()) ->
+-spec create_not_found_number(ne_binary(), api_binary(), 'system' | ne_binary(), wh_json:object(), wnm_number(), api_binary()) ->
                                      operation_return().
-create_not_found_number(Number, AssignTo, AuthBy, PublicFields, N) ->
+create_not_found_number(Number, AssignTo, AuthBy, PublicFields, N, ModuleName) ->
     AccountId = wh_util:format_account_id(AuthBy, 'raw'),
     AccountDb = wh_util:format_account_id(AuthBy, 'encoded'),
     try
@@ -397,6 +403,7 @@ create_not_found_number(Number, AssignTo, AuthBy, PublicFields, N) ->
                                      ,assign_to=AssignTo
                                      ,auth_by=AuthBy
                                      ,number_doc=PublicFields
+                                     ,module_name=wh_util:to_atom(ModuleName, 'true')
                                     },
                 wnm_number:create_available(NewNumber)
         end

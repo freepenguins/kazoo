@@ -82,14 +82,17 @@ create_discovery(#number{number=Number
 -spec create_available(wnm_number()) -> wnm_number().
 create_available(#number{auth_by='undefined'}=N) ->
     error_unauthorized(N);
+create_available(#number{module_name='undefined'}=N) ->
+    ModuleName = whapps_config:get_binary(?WNM_CONFIG_CAT, <<"available_module_name">>, <<"wnm_local">>),
+    create_available(N#number{module_name=wh_util:to_atom(ModuleName, 'true')});
 create_available(#number{number=Number
                          ,auth_by=AuthBy
                          ,number_doc=Doc
+                         ,module_name=ModuleName
                         }=N) ->
     Num = wnm_util:normalize_number(Number),
-    ModuleName = whapps_config:get_binary(?WNM_CONFIG_CAT, <<"available_module_name">>, <<"wnm_local">>),
     Updates = [{<<"_id">>, Num}
-               ,{<<"pvt_module_name">>, ModuleName}
+               ,{<<"pvt_module_name">>, wh_util:to_binary(ModuleName)}
                ,{<<"pvt_module_data">>, wh_json:new()}
                ,{<<"pvt_number_state">>, ?NUMBER_STATE_AVAILABLE}
                ,{<<"pvt_db_name">>, wnm_util:number_to_db_name(Num)}

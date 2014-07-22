@@ -12,10 +12,10 @@
 -module(cb_local_resources).
 
 -export([init/0
-         ,allowed_methods/0, allowed_methods/1
-         ,resource_exists/0, resource_exists/1
-         ,validate/1, validate/2
-         ,put/1
+         ,allowed_methods/0, allowed_methods/1, allowed_methods/2
+         ,resource_exists/0, resource_exists/1, resource_exists/2
+         ,validate/1, validate/2, validate/3
+         ,put/1, put/2
          ,post/2
          ,delete/2
         ]).
@@ -23,8 +23,10 @@
 -include("../crossbar.hrl").
 
 -define(CB_LIST, <<"local_resources/crossbar_listing">>).
--define(CB_JOBLIST, <<"jobs/crossbar_listing">>).
+-define(CB_JOBLIST, <<"jobs/list_by_type">>).
 -define(MOD_CONFIG_CAT, <<(?CONFIG_CAT)/binary, ".local_resources">>).
+-define(JOB_PVT_TYPE,<<"job">>).
+-define(JOB_TYPE,<<"import_carrier_numbers">>).
 
 %%%===================================================================
 %%% API
@@ -55,7 +57,7 @@ allowed_methods(<<"jobs">>) ->
     [?HTTP_GET, ?HTTP_PUT];
 allowed_methods(_) ->
     [?HTTP_GET, ?HTTP_POST, ?HTTP_DELETE].
-allowed_methods(<<"jobs">>, Id) ->
+allowed_methods(<<"jobs">>, _Id) ->
     [?HTTP_GET].
 
 %%--------------------------------------------------------------------
@@ -71,7 +73,7 @@ allowed_methods(<<"jobs">>, Id) ->
 -spec resource_exists(path_token(), path_token()) -> 'true'.
 resource_exists() -> true.
 resource_exists(_) -> true.
-resource_exists(<<"jobs">>, _) -> true.
+resource_exists(<<"jobs">>, _Id) -> true.
 
 %%--------------------------------------------------------------------
 %% @public
@@ -161,20 +163,34 @@ summary(Context) ->
 -spec jobs_summary(cb_context:context()) -> cb_context:context().
 jobs_summary(Context) ->
     Ctx = cb_context:set_account_db(Context, cb_context:account_modb(Context)),
-    crossbar_doc:load_view(?CB_JOBLIST, [], Ctx, fun normalize_view_results/2).
+    ViewOptions = [{'startkey', ?JOB_TYPE}
+                   ,{'endkey', [?JOB_TYPE, wh_json:new()]}
+                  ],
+    crossbar_doc:load_view(?CB_JOBLIST, ViewOptions, Ctx, fun normalize_view_results/2).
 
 validate_job_request(ResourceId, Context) ->
-    Context.
+    check_resource_job_schema(ResourceId, Context).
 
 check_resource_job_schema(ResourceId, Context) ->
     OnSuccess = fun(C) -> on_job_successful_validation(ResourceId, C) end,
-    cb_context:validate_request_data(<<"resources">>, Context, OnSuccess).
+    cb_context:validate_request_data('undefined', Context, OnSuccess).
 
 -spec on_job_successful_validation(api_binary(), cb_context:context()) -> cb_context:context().
 on_job_successful_validation('undefined', #cb_context{doc=JObj}=Context) ->
-    Context#cb_context{doc=wh_json:set_value(<<"pvt_type">>, <<"job">>, JObj)};
-on_job_successful_validation(Id, #cb_context{}=Context) ->
-    crossbar_doc:load_merge(Id, Context).
+    {Year, Month, _} = erlang:date(),
+    AccountMODb = kazoo_modb:get_modb(cb_context:account_id(Context), Year, Month),
+    Ctx = cb_context:set_account_db(Context, wh_util:format_account_id(AccountMODb, 'encoded')),
+    JobId = <<(wh_util:to_binary(Year))/binary
+              ,(wh_util:pad_month(Month))/binary
+              ,"-"
+              ,(wh_util:rand_hex_binary(16))/binary
+            >>,    
+    Ctx#cb_context{doc=wh_json:set_values(
+                             [{<<"pvt_type">>, ?JOB_PVT_TYPE}
+                              ,{<<"pvt_job_status">>, <<"running">>}
+                              ,{<<"job_type">>, ?JOB_TYPE}
+                              ,{<<"_id">>, JobId}
+                             ], JObj)}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -395,3 +411,16 @@ validate_ip(IP, SIPAuth, ACLs, ResourceId) ->
                                   IP =/= AuthIp
                                       orelse ResourceId =:= Id
                           end, SIPAuth).
+
+import_carrier_numbers(#cb_context{doc=JObj}=Context) ->
+    AccountId = cb_context:account_id(Context),
+    Numbers = wh_json:get_value(<<"Numbers">>, JObj, []),
+    Carrier = wh_json:get_value(<<"carrier">>, JObj, <<"local">>),
+    NewJObj = import_carrier_numbers(AccountId, Numbers, Carrier, wh_json:new()),
+    UpdatedJObj = wh_json:set_value(<<"pvt_job_status">>,<<"complete">>, wh_json:merge_jobjs(NewJObj, JObj)),
+    Ctx = cb_context:set_doc(Context, UpdatedJObj),
+    crossbar_doc:ensure_saved(Ctx).
+
+import_carrier_numbers(_AccountId, [], _Carrier, JObj) -> JObj;
+import_carrier_numbers(AccountId, [Number | Numbers], Carrier, JObj) ->
+    wh_number_manager:create_number(Number, 'undefined', AccountId, 'undefined', 'true', Carrier).
