@@ -1463,6 +1463,10 @@
         "callflows.page_group": {
             "description": "Validator for the page_group callflow's data object",
             "properties": {
+                "barge_calls": {
+                    "description": "",
+                    "type": "boolean"
+                },
                 "endpoints": {
                     "default": [],
                     "description": "",
@@ -1514,6 +1518,7 @@
             "properties": {
                 "cdr_url": {
                     "description": "Optional URL to send the CDR to at the end of the call",
+                    "pattern": "^https?://",
                     "required": false,
                     "type": "string"
                 },
@@ -1547,6 +1552,7 @@
                 },
                 "voice_url": {
                     "description": "What URL to request the initial Pivot callflow",
+                    "pattern": "^https?://",
                     "required": true,
                     "type": "string"
                 }
@@ -1669,7 +1675,6 @@
                     "type": "integer"
                 },
                 "time_limit": {
-                    "default": 3600,
                     "description": "Time limit, in seconds, for the recording",
                     "maximum": 3600,
                     "minimum": 5,
@@ -1678,6 +1683,7 @@
                 },
                 "url": {
                     "description": "The URL to use when sending the recording for storage",
+                    "format": "uri",
                     "required": false,
                     "type": "string"
                 }
@@ -1715,6 +1721,7 @@
                 },
                 "url": {
                     "description": "The URL to use when sending the recording for storage",
+                    "format": "uri",
                     "required": false,
                     "type": "string"
                 }
@@ -3666,6 +3673,7 @@
                                         },
                                         "url": {
                                             "description": "The URL to call back with the results",
+                                            "pattern": "^https?://",
                                             "required": false,
                                             "type": "string"
                                         }
@@ -3743,6 +3751,7 @@
                                         },
                                         "url": {
                                             "description": "The URL to call back with the results",
+                                            "pattern": "^https?://",
                                             "required": false,
                                             "type": "string"
                                         }
@@ -3867,6 +3876,7 @@
                         },
                         "url": {
                             "description": "The url of the fax document",
+                            "pattern": "^https?://",
                             "required": true,
                             "type": "string"
                         }
@@ -4724,7 +4734,8 @@
                 "module": {
                     "enum": [
                         "audio_level"
-                    ]
+                    ],
+                    "type": "string"
                 }
             },
             "required": [
@@ -10604,11 +10615,6 @@
         "system_config.omnipresence": {
             "description": "Schema for omnipresence system_config",
             "properties": {
-                "cache_terminated_callid_s": {
-                    "default": 60,
-                    "description": "omnipresence cache terminated callid in seconds",
-                    "type": "integer"
-                },
                 "expire_check_ms": {
                     "default": 1000,
                     "description": "omnipresence expire check in milliseconds",
